@@ -9,6 +9,8 @@
 
 #include "glog/logging.h"
 
+#include "infini_train/include/op.h"
+
 namespace infini_train {
 namespace {
 const std::unordered_map<DataType, size_t> kDataTypeToSize = {
@@ -76,13 +78,13 @@ size_t Tensor::SizeInBytes() const {
     return kDataTypeToSize.at(dtype_) * num_elements_;
 }
 
-std::vector<int64_t> Tensor::Dims() const { return dims_; }
+const std::vector<int64_t> &Tensor::Dims() const { return dims_; }
 
 size_t Tensor::NumElements() const { return num_elements_; }
 
 DataType Tensor::Dtype() const { return dtype_; }
 
-void Tensor::SetProducer(AllowBackward *producer) { producer_ = producer; }
+void Tensor::SetProducer(Op *producer) { producer_ = producer; }
 
 void Tensor::UseGradient() {
     if (!gradient_) {
@@ -102,7 +104,7 @@ void Tensor::ZeroGrad() {
 
 void Tensor::Backward() const {
     if (producer_) {
-        producer_->Backward();
+        producer_->Backward(this);
     }
 }
 

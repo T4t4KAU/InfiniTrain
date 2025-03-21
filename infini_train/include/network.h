@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "infini_train/include/op.h"
@@ -8,33 +10,25 @@
 namespace infini_train {
 class Network {
 public:
-    explicit Network(const std::vector<Tensor *> input_tensors);
-    virtual ~Network() = default;
+    virtual ~Network(){};
 
-    void AddOutputTensor(Tensor *tensor);
+    void AddNamedLayer(const std::string &name, std::unique_ptr<Op> &&layer);
+    std::unique_ptr<Op> &GetLayer(const std::string &name);
 
-    std::vector<Tensor> &AddLayer(std::unique_ptr<Op> op);
+    std::vector<Tensor *> Parameters();
 
-    std::vector<Tensor *> Parameters() const;
-
-    std::vector<Tensor *> &InputTensors();
-    const std::vector<Tensor *> &InputTensors() const;
-
-    std::vector<Tensor *> &OutputTensors();
-    const std::vector<Tensor *> &OutputTensors() const;
-
-    void Forward();
+    virtual std::vector<std::shared_ptr<Tensor>> Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) = 0;
 
 protected:
-    std::vector<Tensor *> input_tensors_;
-    std::vector<Tensor *> output_tensors_;
-    std::vector<std::unique_ptr<Op>> layers_;
+    std::unordered_map<std::string, std::unique_ptr<Op>> name_to_layers_;
 };
 
 namespace loss {
 class CrossEntropyLoss : public Network {
 public:
-    explicit CrossEntropyLoss(const std::vector<Tensor *> &input_tensors);
+    CrossEntropyLoss();
+
+    std::vector<std::shared_ptr<Tensor>> Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) override;
 };
 } // namespace loss
 } // namespace infini_train
