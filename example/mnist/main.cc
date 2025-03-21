@@ -137,14 +137,11 @@ public:
         image_file_.tensor = std::move(transposed_tensor);
     }
 
-    std::pair<std::unique_ptr<infini_train::Tensor>,
-              std::unique_ptr<infini_train::Tensor>>
+    std::pair<std::shared_ptr<infini_train::Tensor>, std::shared_ptr<infini_train::Tensor>>
     operator[](size_t idx) const override {
         CHECK_LT(idx, image_file_.dims[0]);
-        return {std::make_unique<infini_train::Tensor>(
-                    image_file_.tensor, idx * image_size_in_bytes_, image_dims_),
-                std::make_unique<infini_train::Tensor>(
-                    label_file_.tensor, idx * label_size_in_bytes_, label_dims_)};
+        return {std::make_shared<infini_train::Tensor>(image_file_.tensor, idx * image_size_in_bytes_, image_dims_),
+                std::make_shared<infini_train::Tensor>(label_file_.tensor, idx * label_size_in_bytes_, label_dims_)};
     }
 
     size_t Size() const override { return image_file_.dims[0]; }
@@ -160,21 +157,19 @@ private:
 
 class MNIST : public infini_train::Network {
 public:
-    MNIST(const std::vector<infini_train::Tensor *> input_tensors,
-          const int64_t batch_size)
-        : Network(input_tensors) {
-        CHECK_EQ(input_tensors.size(), 1);
-        auto *image_tensor = input_tensors_.at(0);
-        auto linear1 = std::make_unique<infini_train::ops::Linear>(
-            std::vector<infini_train::Tensor *>{image_tensor}, 30);
-        auto &x1 = AddLayer(std::move(linear1));
-        auto sigmoid = std::make_unique<infini_train::ops::Sigmoid>(
-            std::vector<infini_train::Tensor *>{&x1.at(0)});
-        auto &x2 = AddLayer(std::move(sigmoid));
-        auto linear2 = std::make_unique<infini_train::ops::Linear>(
-            std::vector<infini_train::Tensor *>{&x2.at(0)}, 10);
-        auto &x3 = AddLayer(std::move(linear2));
-        AddOutputTensor(&x3.at(0));
+    MNIST() {
+        AddNamedLayer("linear1", std::make_unique<infini_train::ops::Linear>(784, 30));
+        AddNamedLayer("sigmoid1", std::make_unique<infini_train::ops::Sigmoid>());
+        AddNamedLayer("linear2", std::make_unique<infini_train::ops::Linear>(30, 10));
+    }
+
+    std::vector<std::shared_ptr<infini_train::Tensor>>
+    Forward(const std::vector<std::shared_ptr<infini_train::Tensor>> &x) override {
+        CHECK_EQ(x.size(), 1);
+        auto x1 = GetLayer("linear1")->Forward(x);
+        auto x2 = GetLayer("sigmoid1")->Forward(x1);
+        auto x3 = GetLayer("linear2")->Forward(x2);
+        return x3;
     }
 };
 } // namespace
@@ -183,33 +178,28 @@ int main(int argc, char *argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
 
-    infini_train::Tensor input({FLAGS_bs, 784}, DataType::kFLOAT32);
-    auto network = MNIST({&input}, FLAGS_bs);
-    auto *output = network.OutputTensors().at(0);
-    infini_train::Tensor label({FLAGS_bs}, DataType::kUINT8);
-    auto loss_fn = infini_train::loss::CrossEntropyLoss({output, &label});
+    auto train_dataset = std::make_shared<MNISTDataset>(FLAGS_dataset);
+    infini_train::DataLoader train_dataloader(train_dataset, FLAGS_bs);
+
+    auto network = MNIST();
+    // network.To(device);
+    auto loss_fn = infini_train::loss::CrossEntropyLoss();
     auto optimizer = infini_train::optimizers::SGD(network.Parameters(), FLAGS_lr);
 
-    auto train_dataset = std::make_shared<MNISTDataset>(FLAGS_dataset);
-    infini_train::DataLoader train_dataloader(train_dataset, FLAGS_bs,
-                                              network.InputTensors().at(0),
-                                              loss_fn.InputTensors().at(1));
     int idx = 0;
     for (int epoch = 0; epoch < FLAGS_num_epoch; ++epoch) {
         idx = 0;
         for (const auto &[image, label] : train_dataloader) {
             // image.to(device);
             // label.to(device);
-            network.Forward();
+            auto outputs = network.Forward({image});
             optimizer.ZeroGrad();
-            loss_fn.Forward();
-            auto *loss = loss_fn.OutputTensors().at(0);
+            auto loss = loss_fn.Forward({outputs[0], label});
             if (idx % 10 == 0) {
                 LOG(ERROR) << "epoch: " << epoch << ", [" << idx * FLAGS_bs << "/" << train_dataset->Size() << "] "
-                           << " loss: "
-                           << reinterpret_cast<float *>(loss->DataPtr())[0];
+                           << " loss: " << reinterpret_cast<float *>(loss[0]->DataPtr())[0];
             }
-            loss->Backward();
+            loss[0]->Backward();
             optimizer.Step();
             idx += 1;
         }

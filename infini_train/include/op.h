@@ -9,28 +9,24 @@
 #include "infini_train/include/tensor.h"
 
 namespace infini_train {
-class Op : public AllowBackward {
+class Op {
 public:
-    explicit Op(const std::vector<Tensor *> input_tensors);
     virtual ~Op() = default;
 
-    void OutputTensorsUseGradient();
+    std::vector<std::shared_ptr<Tensor>> Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors);
+    // TODO(dcj): Support multiple output tensors later.
+    void Backward(const Tensor *output_tensor);
 
-    virtual void Forward() = 0;
-    virtual void BackwardImpl() = 0;
-    void Backward() override;
+    virtual std::vector<std::shared_ptr<Tensor>> ForwardImpl() = 0;
+    virtual void BackwardImpl(const Tensor *output_tensor) = 0;
 
     void AddWeight(const std::vector<int64_t> &dims, const DataType dtype);
 
     std::vector<Tensor> &Weights();
     const std::vector<Tensor> &Weights() const;
 
-    std::vector<Tensor> &OutputTensors();
-    const std::vector<Tensor> &OutputTensors() const;
-
 protected:
-    std::vector<Tensor *> input_tensors_; // not owned
-    std::vector<Tensor> output_tensors_;
+    std::vector<std::shared_ptr<Tensor>> input_tensors_;
     std::vector<Tensor> weights_;
 };
 
@@ -42,14 +38,12 @@ namespace ops {
  */
 class Linear : public Op {
 public:
-    Linear(const std::vector<Tensor *> &input_tensors, int64_t out_dim);
+    Linear(int64_t in_dim, int64_t out_dim);
 
-    void Forward() override;
-
-    void BackwardImpl() override;
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl(const Tensor *output_tensor) override;
 
 private:
-    int64_t bs_ = 0;
     int64_t in_dim_ = 0;
     int64_t out_dim_ = 0;
 };
@@ -61,28 +55,24 @@ private:
  */
 class Sigmoid : public Op {
 public:
-    Sigmoid(const std::vector<Tensor *> input_tensors);
+    Sigmoid() = default;
 
-    void Forward() override;
-
-    void BackwardImpl() override;
-
-private:
-    int64_t bs_ = 0;
-    int64_t out_dim_ = 0;
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl(const Tensor *output_tensor) override;
 };
 
+/*
+  -> CrossEntropy
+  -> input: [bs, out_dim]
+  -> target: [bs,]
+  -> output: scalar
+*/
 class CrossEntropy : public Op {
 public:
-    CrossEntropy(const std::vector<Tensor *> input_tensors);
+    CrossEntropy() = default;
 
-    void Forward() override;
-
-    void BackwardImpl() override;
-
-private:
-    int64_t bs_ = 0;
-    int64_t num_classes_ = 0;
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl(const Tensor *output_tensor) override;
 };
 } // namespace ops
 } // namespace infini_train

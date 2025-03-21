@@ -8,12 +8,9 @@
 #include "glog/logging.h"
 
 namespace infini_train {
-class AllowBackward {
-public:
-    virtual void Backward() = 0;
-};
+class Op;
 
-enum class DataType {
+enum class DataType : int8_t {
     kUINT8,
     kINT8,
     kUINT16,
@@ -53,11 +50,11 @@ public:
 
     size_t SizeInBytes() const;
 
-    std::vector<int64_t> Dims() const;
+    const std::vector<int64_t> &Dims() const;
     size_t NumElements() const;
     DataType Dtype() const;
 
-    void SetProducer(AllowBackward *producer);
+    void SetProducer(Op *producer);
 
     void UseGradient();
     Tensor *Gradient();
@@ -78,7 +75,7 @@ private:
     size_t num_elements_ = 0;
     DataType dtype_;
 
-    AllowBackward *producer_ = nullptr;
+    Op *producer_ = nullptr;
     std::unique_ptr<Tensor> gradient_ = nullptr;
 };
 } // namespace infini_train
