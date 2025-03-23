@@ -64,6 +64,7 @@ void Tensor::SetProducer(ops::Op *producer) { producer_ = producer; }
 void Tensor::UseGradient() {
     if (!gradient_) {
         gradient_ = std::make_unique<Tensor>(dims_, dtype_);
+        gradient_->Fill<float>(0.0f);
     }
 }
 
@@ -73,7 +74,7 @@ const Tensor *Tensor::Gradient() const { return gradient_.get(); }
 
 void Tensor::ZeroGrad() {
     if (gradient_) {
-        std::memset(gradient_->DataPtr(), 0, gradient_->SizeInBytes());
+        gradient_->Fill<float>(0.0f);
     }
 }
 
@@ -84,7 +85,7 @@ void Tensor::Backward() const {
 }
 
 template <typename T> void Tensor::Fill(T value) {
-    for (int idx = 0; idx < num_elements_; ++idx) { reinterpret_cast<T *>(DataPtr())[idx] = value; }
+    std::fill(reinterpret_cast<T *>(DataPtr()), reinterpret_cast<T *>(DataPtr()) + num_elements_, value);
 }
 
 template void Tensor::Fill<float>(float);

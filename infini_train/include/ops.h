@@ -14,14 +14,16 @@ public:
     virtual ~Op() = default;
 
     std::vector<std::shared_ptr<Tensor>> Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors);
-    // TODO(dcj): Support multiple output tensors later.
+    // TODO(dcj): Check the validity of the output_tensor
     void Backward(const Tensor *output_tensor);
 
     virtual std::vector<std::shared_ptr<Tensor>> ForwardImpl() = 0;
-    virtual void BackwardImpl(const Tensor *output_tensor) = 0;
+    virtual void BackwardImpl() = 0;
 
 protected:
     std::vector<std::shared_ptr<Tensor>> input_tensors_;
+    std::vector<std::shared_ptr<Tensor>> output_tensors_;
+    int64_t backward_reached_ = 0; // record the number of tensors this op produced call to backward
 };
 
 /*
@@ -34,7 +36,7 @@ public:
     Linear(Tensor *weight, Tensor *bias);
 
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
-    void BackwardImpl(const Tensor *output_tensor) override;
+    void BackwardImpl() override;
 
 private:
     int64_t in_dim_ = 0;
@@ -53,7 +55,7 @@ public:
     Sigmoid() = default;
 
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
-    void BackwardImpl(const Tensor *output_tensor) override;
+    void BackwardImpl() override;
 };
 
 /*
@@ -66,6 +68,6 @@ public:
     CrossEntropy() = default;
 
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
-    void BackwardImpl(const Tensor *output_tensor) override;
+    void BackwardImpl() override;
 };
 } // namespace infini_train::ops
