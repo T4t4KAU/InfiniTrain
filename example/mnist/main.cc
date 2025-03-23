@@ -51,8 +51,8 @@ int main(int argc, char *argv[]) {
             optimizer.ZeroGrad();
             auto loss = loss_fn.Forward({outputs[0], label});
             if (train_idx % kNumItersOfOutputDuration == 0) {
-                LOG(ERROR) << "epoch: " << epoch << ", [" << train_idx * FLAGS_bs << "/" << train_dataset->Size() << "] "
-                           << " loss: " << reinterpret_cast<float *>(loss[0]->DataPtr())[0];
+                LOG(ERROR) << "epoch: " << epoch << ", [" << train_idx * FLAGS_bs << "/" << train_dataset->Size()
+                           << "] " << " loss: " << reinterpret_cast<float *>(loss[0]->DataPtr())[0];
             }
             loss[0]->Backward();
             optimizer.Step();
@@ -80,7 +80,8 @@ int main(int argc, char *argv[]) {
         test_losses.push_back(reinterpret_cast<float *>(loss[0]->DataPtr())[0]);
     }
     const auto avg_loss = std::accumulate(test_losses.begin(), test_losses.end(), 0.0) / test_losses.size();
-    LOG(ERROR) << "Total: " << total << ", Correct: " << correct << ", Accuracy: " << static_cast<float>(correct) / total << ", AverateLoss: " << avg_loss;
+    LOG(ERROR) << "Total: " << total << ", Correct: " << correct
+               << ", Accuracy: " << static_cast<float>(correct) / total << ", AverateLoss: " << avg_loss;
 
     gflags::ShutDownCommandLineFlags();
     google::ShutdownGoogleLogging();

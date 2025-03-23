@@ -65,8 +65,7 @@ public:
 
     void Backward() const;
 
-    template <typename T>
-    void Fill(T value);
+    template <typename T> void Fill(T value);
 
     friend std::ostream &operator<<(std::ostream &os, const Tensor &tensor);
 

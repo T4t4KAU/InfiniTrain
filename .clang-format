@@ -4,7 +4,7 @@ IndentWidth: 4
 AccessModifierOffset: -4
 AlignOperands: AlignAfterOperator
 BreakBeforeBinaryOperators: All
-ColumnLimit: 0
+ColumnLimit: 120
 AllowShortBlocksOnASingleLine: Always 
 AllowShortLoopsOnASingleLine: true
 InsertBraces: true

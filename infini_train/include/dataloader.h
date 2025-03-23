@@ -17,12 +17,9 @@ public:
     DataLoaderIterator &operator++();
     DataLoaderIterator operator++(int);
 
-    friend bool operator<(const DataLoaderIterator &lhs,
-                          const DataLoaderIterator &rhs);
-    friend bool operator!=(const DataLoaderIterator &lhs,
-                           const DataLoaderIterator &rhs);
-    friend bool operator==(const DataLoaderIterator &lhs,
-                           const DataLoaderIterator &rhs);
+    friend bool operator<(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs);
+    friend bool operator!=(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs);
+    friend bool operator==(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs);
 
 private:
     const Dataset *dataset_ = nullptr; // not owned

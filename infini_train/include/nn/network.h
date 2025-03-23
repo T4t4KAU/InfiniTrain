@@ -11,12 +11,12 @@ class Network {
 public:
     virtual ~Network(){};
 
-    Network* AddNamedLayer(const std::string &name, std::unique_ptr<Network> &&layer);
+    Network *AddNamedLayer(const std::string &name, std::unique_ptr<Network> &&layer);
     std::unique_ptr<Network> &GetLayer(const std::string &name);
 
     void AddNamedParameter(const std::string &name, const std::vector<int64_t> &dims, const DataType dtype);
-    std::vector<Tensor*> Parameters() const;
-    Tensor* GetParameter(const std::string &name) const;
+    std::vector<Tensor *> Parameters() const;
+    Tensor *GetParameter(const std::string &name) const;
 
     virtual std::vector<std::shared_ptr<Tensor>> Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) = 0;
 

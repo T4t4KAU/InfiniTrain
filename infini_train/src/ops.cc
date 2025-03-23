@@ -22,9 +22,7 @@ std::vector<std::shared_ptr<Tensor>> Op::Forward(const std::vector<std::shared_p
 
 void Op::Backward(const Tensor *output_tensor) {
     BackwardImpl(output_tensor);
-    for (const auto &tensor : input_tensors_) {
-        tensor->Backward();
-    }
+    for (const auto &tensor : input_tensors_) { tensor->Backward(); }
 }
 
 Linear::Linear(Tensor *weight, Tensor *bias)
@@ -44,9 +42,11 @@ std::vector<std::shared_ptr<Tensor>> Linear::ForwardImpl() {
         for (int64_t j = 0; j < out_dim_; ++j) {
             float sum = 0.0f;
             for (int64_t k = 0; k < in_dim_; ++k) {
-                sum += reinterpret_cast<const float *>(input->DataPtr())[i * in_dim_ + k] * reinterpret_cast<const float *>(w_->DataPtr())[k * out_dim_ + j];
+                sum += reinterpret_cast<const float *>(input->DataPtr())[i * in_dim_ + k]
+                     * reinterpret_cast<const float *>(w_->DataPtr())[k * out_dim_ + j];
             }
-            reinterpret_cast<float *>(output->DataPtr())[i * out_dim_ + j] = sum + reinterpret_cast<const float *>(b_->DataPtr())[j];
+            reinterpret_cast<float *>(output->DataPtr())[i * out_dim_ + j]
+                = sum + reinterpret_cast<const float *>(b_->DataPtr())[j];
         }
     }
     return {output};
@@ -65,14 +65,10 @@ void Linear::BackwardImpl(const Tensor *output_tensor) {
             for (int64_t j = 0; j < in_dim_; ++j) {
                 float sum = 0.0f;
                 for (int64_t k = 0; k < out_dim_; ++k) {
-                    sum += reinterpret_cast<float *>(
-                               w_->Gradient()->DataPtr())[j * out_dim_ + k]
-                         * reinterpret_cast<const float *>(
-                               output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+                    sum += reinterpret_cast<float *>(w_->Gradient()->DataPtr())[j * out_dim_ + k]
+                         * reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
                 }
-                reinterpret_cast<float *>(
-                    input->Gradient()->DataPtr())[i * in_dim_ + j]
-                    = sum;
+                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * in_dim_ + j] = sum;
             }
         }
     }
@@ -81,12 +77,14 @@ void Linear::BackwardImpl(const Tensor *output_tensor) {
     for (int64_t i = 0; i < bs; ++i) {
         for (int64_t j = 0; j < in_dim_; ++j) {
             for (int64_t k = 0; k < out_dim_; ++k) {
-                reinterpret_cast<float *>(w_->Gradient()->DataPtr())[j * out_dim_ + k] += reinterpret_cast<float *>(input->DataPtr())[i * in_dim_ + j] * reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+                reinterpret_cast<float *>(w_->Gradient()->DataPtr())[j * out_dim_ + k]
+                    += reinterpret_cast<float *>(input->DataPtr())[i * in_dim_ + j]
+                     * reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
             }
         }
         for (int64_t k = 0; k < out_dim_; ++k) {
-            reinterpret_cast<float *>(b_->Gradient()->DataPtr())[k] += reinterpret_cast<const float *>(
-                output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+            reinterpret_cast<float *>(b_->Gradient()->DataPtr())[k]
+                += reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
         }
     }
 }
@@ -122,8 +120,8 @@ void Sigmoid::BackwardImpl(const Tensor *output_tensor) {
         for (int64_t i = 0; i < bs; ++i) {
             for (int64_t j = 0; j < out_dim; ++j) {
                 const float x = reinterpret_cast<const float *>(output_tensor->DataPtr())[i * out_dim + j];
-                const float grad = reinterpret_cast<const float *>(
-                    output_tensor->Gradient()->DataPtr())[i * out_dim + j];
+                const float grad
+                    = reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim + j];
                 reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * out_dim + j] = grad * x * (1.0f - x);
             }
         }
@@ -215,7 +213,8 @@ void CrossEntropy::BackwardImpl(const Tensor *output_tensor) {
             int64_t target_idx = target->DataPtr()[i];
             for (int j = 0; j < num_classes; ++j) {
                 float grad = softmax_probs[i * num_classes + j] - (j == target_idx ? 1.0f : 0.0f);
-                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * num_classes + j] = grad / bs; // normalize by batch size
+                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * num_classes + j]
+                    = grad / bs; // normalize by batch size
             }
         }
     }

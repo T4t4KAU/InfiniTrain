@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "infini_train/include/nn/network.h"
-#include "infini_train/include/tensor.h"
 #include "infini_train/include/ops.h"
+#include "infini_train/include/tensor.h"
 
 namespace infini_train::nn {
 class Sigmoid : public Network {

@@ -14,38 +14,20 @@
 namespace infini_train {
 namespace {
 const std::unordered_map<DataType, size_t> kDataTypeToSize = {
-    {DataType::kUINT8, 1},
-    {DataType::kINT8, 1},
-    {DataType::kUINT16, 2},
-    {DataType::kINT16, 2},
-    {DataType::kUINT32, 4},
-    {DataType::kINT32, 4},
-    {DataType::kUINT64, 8},
-    {DataType::kINT64, 8},
-    {DataType::kBFLOAT16, 2},
-    {DataType::kFLOAT16, 2},
-    {DataType::kFLOAT32, 4},
-    {DataType::kFLOAT64, 8},
+    {DataType::kUINT8, 1},    {DataType::kINT8, 1},    {DataType::kUINT16, 2},  {DataType::kINT16, 2},
+    {DataType::kUINT32, 4},   {DataType::kINT32, 4},   {DataType::kUINT64, 8},  {DataType::kINT64, 8},
+    {DataType::kBFLOAT16, 2}, {DataType::kFLOAT16, 2}, {DataType::kFLOAT32, 4}, {DataType::kFLOAT64, 8},
 };
 
 const std::unordered_map<DataType, std::string> kDataTypeToDesc = {
-    {DataType::kUINT8, "uint8"},
-    {DataType::kINT8, "int8"},
-    {DataType::kUINT16, "uint16"},
-    {DataType::kINT16, "int16"},
-    {DataType::kUINT32, "uint32"},
-    {DataType::kINT32, "int32"},
-    {DataType::kUINT64, "uint64"},
-    {DataType::kINT64, "int64"},
-    {DataType::kBFLOAT16, "bf16"},
-    {DataType::kFLOAT16, "fp16"},
-    {DataType::kFLOAT32, "fp32"},
-    {DataType::kFLOAT64, "fp64"},
+    {DataType::kUINT8, "uint8"},   {DataType::kINT8, "int8"},     {DataType::kUINT16, "uint16"},
+    {DataType::kINT16, "int16"},   {DataType::kUINT32, "uint32"}, {DataType::kINT32, "int32"},
+    {DataType::kUINT64, "uint64"}, {DataType::kINT64, "int64"},   {DataType::kBFLOAT16, "bf16"},
+    {DataType::kFLOAT16, "fp16"},  {DataType::kFLOAT32, "fp32"},  {DataType::kFLOAT64, "fp64"},
 };
 } // namespace
 
-TensorBuffer::TensorBuffer(size_t size)
-    : data_(std::make_unique<uint8_t[]>(size)), size_(size) {}
+TensorBuffer::TensorBuffer(size_t size) : data_(std::make_unique<uint8_t[]>(size)), size_(size) {}
 
 uint8_t *TensorBuffer::DataPtr() { return data_.get(); }
 
@@ -55,28 +37,21 @@ size_t TensorBuffer::Size() const { return size_; }
 
 Tensor::Tensor(const std::vector<int64_t> &dims, DataType dtype)
     : buffer_(std::make_shared<TensorBuffer>(
-        kDataTypeToSize.at(dtype) * std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<int64_t>()))),
-      dims_(dims), num_elements_(std::accumulate(dims.begin(), dims.end(), 1,
-                                                 std::multiplies<int64_t>())),
+          kDataTypeToSize.at(dtype) * std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<int64_t>()))),
+      dims_(dims), num_elements_(std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<int64_t>())),
       dtype_(dtype) {}
 
-Tensor::Tensor(const Tensor &tensor, size_t offset,
-               const std::vector<int64_t> &dims)
+Tensor::Tensor(const Tensor &tensor, size_t offset, const std::vector<int64_t> &dims)
     : buffer_(tensor.buffer_), offset_(offset), dims_(dims),
-      num_elements_(std::accumulate(dims.begin(), dims.end(), 1,
-                                    std::multiplies<int64_t>())),
-      dtype_(tensor.dtype_) {
-    CHECK_LE(offset_ + kDataTypeToSize.at(dtype_) * num_elements_,
-             buffer_->Size());
+      num_elements_(std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<int64_t>())), dtype_(tensor.dtype_) {
+    CHECK_LE(offset_ + kDataTypeToSize.at(dtype_) * num_elements_, buffer_->Size());
 }
 
 uint8_t *Tensor::DataPtr() { return buffer_->DataPtr() + offset_; }
 
 const uint8_t *Tensor::DataPtr() const { return buffer_->DataPtr() + offset_; }
 
-size_t Tensor::SizeInBytes() const {
-    return kDataTypeToSize.at(dtype_) * num_elements_;
-}
+size_t Tensor::SizeInBytes() const { return kDataTypeToSize.at(dtype_) * num_elements_; }
 
 const std::vector<int64_t> &Tensor::Dims() const { return dims_; }
 
@@ -108,21 +83,15 @@ void Tensor::Backward() const {
     }
 }
 
-template <typename T>
-void Tensor::Fill(T value) {
-    for (int idx = 0; idx < num_elements_; ++idx) {
-        reinterpret_cast<T *>(DataPtr())[idx] = value;
-    }
+template <typename T> void Tensor::Fill(T value) {
+    for (int idx = 0; idx < num_elements_; ++idx) { reinterpret_cast<T *>(DataPtr())[idx] = value; }
 }
 
 template void Tensor::Fill<float>(float);
 
 std::ostream &operator<<(std::ostream &os, const Tensor &tensor) {
-    os << "Tensor(data_ptr=" << static_cast<const void *>(tensor.DataPtr())
-       << ", dims=[";
-    for (const auto &dim : tensor.Dims()) {
-        os << dim << ", ";
-    }
+    os << "Tensor(data_ptr=" << static_cast<const void *>(tensor.DataPtr()) << ", dims=[";
+    for (const auto &dim : tensor.Dims()) { os << dim << ", "; }
     os << "], dtype=" << kDataTypeToDesc.at(tensor.Dtype()) << ")";
     return os;
 }

@@ -29,18 +29,12 @@ void Network::AddNamedParameter(const std::string &name, const std::vector<int64
 
 std::vector<Tensor *> Network::Parameters() const {
     std::vector<Tensor *> params;
-    for (auto &[_, param] : named_parameters_) {
-        params.push_back(param.get());
-    }
+    for (auto &[_, param] : named_parameters_) { params.push_back(param.get()); }
     for (auto &[_, layer] : named_layers_) {
-        for (auto &param : layer->Parameters()) {
-            params.push_back(param);
-        }
+        for (auto &param : layer->Parameters()) { params.push_back(param); }
     }
     return params;
 }
 
-Tensor *Network::GetParameter(const std::string &name) const {
-    return named_parameters_.at(name).get();
-}
+Tensor *Network::GetParameter(const std::string &name) const { return named_parameters_.at(name).get(); }
 } // namespace infini_train::nn

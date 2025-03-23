@@ -9,7 +9,8 @@
 namespace infini_train::nn {
 CrossEntropyLoss::CrossEntropyLoss() : cross_entropy_op_(std::make_unique<ops::CrossEntropy>()) {}
 
-std::vector<std::shared_ptr<Tensor>> CrossEntropyLoss::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
+std::vector<std::shared_ptr<Tensor>>
+CrossEntropyLoss::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
     return cross_entropy_op_->Forward(input_tensors);
 }
 } // namespace infini_train::nn

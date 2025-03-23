@@ -27,8 +27,7 @@ std::shared_ptr<Tensor> Stack(const std::vector<std::shared_ptr<Tensor>> &tensor
 
     size_t offset = 0;
     for (const auto &tensor : tensors) {
-        memcpy(stacked_tensor->DataPtr() + offset, tensor->DataPtr(),
-               tensor->SizeInBytes());
+        memcpy(stacked_tensor->DataPtr() + offset, tensor->DataPtr(), tensor->SizeInBytes());
         offset += tensor->SizeInBytes();
     }
     return stacked_tensor;
@@ -48,8 +47,7 @@ std::pair<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>> DataLoaderIterator::
     */
     std::vector<std::shared_ptr<Tensor>> data_vec;
     std::vector<std::shared_ptr<Tensor>> label_vec;
-    for (int idx = batch_idx_ * batch_size_;
-         idx < (batch_idx_ + 1) * batch_size_ && idx < dataset_->Size(); ++idx) {
+    for (int idx = batch_idx_ * batch_size_; idx < (batch_idx_ + 1) * batch_size_ && idx < dataset_->Size(); ++idx) {
         auto &&[data, label] = dataset_->operator[](idx);
         data_vec.push_back(std::move(data));
         label_vec.push_back(std::move(label));
@@ -68,9 +66,7 @@ DataLoaderIterator DataLoaderIterator::operator++(int) {
     return tmp;
 }
 
-bool operator<(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs) {
-    return lhs.batch_idx_ < rhs.batch_idx_;
-}
+bool operator<(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs) { return lhs.batch_idx_ < rhs.batch_idx_; }
 
 bool operator!=(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs) {
     return lhs.batch_idx_ != rhs.batch_idx_;

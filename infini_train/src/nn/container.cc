@@ -18,9 +18,7 @@ Sequential::Sequential(std::vector<std::unique_ptr<Network>> &&layers) {
 
 std::vector<std::shared_ptr<Tensor>> Sequential::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
     auto &x = const_cast<std::vector<std::shared_ptr<Tensor>> &>(input_tensors);
-    for (auto *layer : layers_) {
-        x = layer->Forward(x);
-    }
+    for (auto *layer : layers_) { x = layer->Forward(x); }
     return x;
 }
 } // namespace infini_train::nn
