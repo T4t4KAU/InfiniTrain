@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -9,7 +8,7 @@
 #include "glog/logging.h"
 
 #include "infini_train/include/dataloader.h"
-#include "infini_train/include/network.h"
+#include "infini_train/include/nn/loss.h"
 #include "infini_train/include/optimizer.h"
 
 #include "example/mnist/dataset.h"
@@ -40,7 +39,7 @@ int main(int argc, char *argv[]) {
 
     auto network = MNIST();
     // network.To(device);
-    auto loss_fn = loss::CrossEntropyLoss();
+    auto loss_fn = nn::CrossEntropyLoss();
     auto optimizer = optimizers::SGD(network.Parameters(), FLAGS_lr);
 
     for (int epoch = 0; epoch < FLAGS_num_epoch; ++epoch) {

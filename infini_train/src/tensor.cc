@@ -9,7 +9,7 @@
 
 #include "glog/logging.h"
 
-#include "infini_train/include/op.h"
+#include "infini_train/include/ops.h"
 
 namespace infini_train {
 namespace {
@@ -84,7 +84,7 @@ size_t Tensor::NumElements() const { return num_elements_; }
 
 DataType Tensor::Dtype() const { return dtype_; }
 
-void Tensor::SetProducer(Op *producer) { producer_ = producer; }
+void Tensor::SetProducer(ops::Op *producer) { producer_ = producer; }
 
 void Tensor::UseGradient() {
     if (!gradient_) {

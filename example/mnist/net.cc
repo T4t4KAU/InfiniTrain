@@ -7,20 +7,26 @@
 
 #include "glog/logging.h"
 
-#include "infini_train/include/op.h"
+#include "infini_train/include/nn/activations.h"
+#include "infini_train/include/nn/container.h"
+#include "infini_train/include/nn/linear.h"
+#include "infini_train/include/nn/network.h"
 #include "infini_train/include/tensor.h"
 
+namespace nn = infini_train::nn;
+
 MNIST::MNIST() {
-    AddNamedLayer("linear1", std::make_unique<infini_train::ops::Linear>(784, 30));
-    AddNamedLayer("sigmoid1", std::make_unique<infini_train::ops::Sigmoid>());
-    AddNamedLayer("linear2", std::make_unique<infini_train::ops::Linear>(30, 10));
+    std::vector<std::unique_ptr<nn::Network>> layers;
+    layers.push_back(std::make_unique<nn::Linear>(784, 30));
+    layers.push_back(std::make_unique<nn::Sigmoid>());
+    AddNamedLayer("sequential", std::make_unique<nn::Sequential>(std::move(layers)));
+    AddNamedLayer("linear2", std::make_unique<nn::Linear>(30, 10));
 }
 
 std::vector<std::shared_ptr<infini_train::Tensor>>
 MNIST::Forward(const std::vector<std::shared_ptr<infini_train::Tensor>> &x) {
     CHECK_EQ(x.size(), 1);
-    auto x1 = GetLayer("linear1")->Forward(x);
-    auto x2 = GetLayer("sigmoid1")->Forward(x1);
-    auto x3 = GetLayer("linear2")->Forward(x2);
-    return x3;
+    auto x1 = GetLayer("sequential")->Forward(x);
+    auto x2 = GetLayer("linear2")->Forward(x1);
+    return x2;
 }

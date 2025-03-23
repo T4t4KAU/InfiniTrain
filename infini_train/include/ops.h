@@ -8,7 +8,7 @@
 
 #include "infini_train/include/tensor.h"
 
-namespace infini_train {
+namespace infini_train::ops {
 class Op {
 public:
     virtual ~Op() = default;
@@ -20,25 +20,18 @@ public:
     virtual std::vector<std::shared_ptr<Tensor>> ForwardImpl() = 0;
     virtual void BackwardImpl(const Tensor *output_tensor) = 0;
 
-    void AddWeight(const std::vector<int64_t> &dims, const DataType dtype);
-
-    std::vector<Tensor> &Weights();
-    const std::vector<Tensor> &Weights() const;
-
 protected:
     std::vector<std::shared_ptr<Tensor>> input_tensors_;
-    std::vector<Tensor> weights_;
 };
 
-namespace ops {
 /*
   x: [bs, in_dim]
   -> Linear (w: [in_dim, out_dim], b: [out_dim])
   -> o: [bs, out_dim]
- */
+*/
 class Linear : public Op {
 public:
-    Linear(int64_t in_dim, int64_t out_dim);
+    Linear(Tensor *weight, Tensor *bias);
 
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
     void BackwardImpl(const Tensor *output_tensor) override;
@@ -46,11 +39,13 @@ public:
 private:
     int64_t in_dim_ = 0;
     int64_t out_dim_ = 0;
+    Tensor *w_ = nullptr; // not owned
+    Tensor *b_ = nullptr; // not owned
 };
 
 /*
-  -> Sigmoid
-  -> input: [bs, out_dim]
+  input: [bs, out_dim]
+  -> Sigmoid ()
   -> output: [bs, out_dim]
  */
 class Sigmoid : public Op {
@@ -62,10 +57,9 @@ public:
 };
 
 /*
-  -> CrossEntropy
   -> input: [bs, out_dim]
+  -> CrossEntropy ()
   -> target: [bs,]
-  -> output: scalar
 */
 class CrossEntropy : public Op {
 public:
@@ -74,5 +68,4 @@ public:
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
     void BackwardImpl(const Tensor *output_tensor) override;
 };
-} // namespace ops
-} // namespace infini_train
+} // namespace infini_train::ops
