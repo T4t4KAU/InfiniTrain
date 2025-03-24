@@ -8,7 +8,9 @@
 #include "glog/logging.h"
 
 namespace infini_train {
+namespace ops {
 class Op;
+}
 
 enum class DataType : int8_t {
     kUINT8,
@@ -54,7 +56,7 @@ public:
     size_t NumElements() const;
     DataType Dtype() const;
 
-    void SetProducer(Op *producer);
+    void SetProducer(ops::Op *producer);
 
     void UseGradient();
     Tensor *Gradient();
@@ -63,8 +65,7 @@ public:
 
     void Backward() const;
 
-    template <typename T>
-    void Fill(T value);
+    template <typename T> void Fill(T value);
 
     friend std::ostream &operator<<(std::ostream &os, const Tensor &tensor);
 
@@ -75,7 +76,7 @@ private:
     size_t num_elements_ = 0;
     DataType dtype_;
 
-    Op *producer_ = nullptr;
+    ops::Op *producer_ = nullptr;
     std::unique_ptr<Tensor> gradient_ = nullptr;
 };
 } // namespace infini_train

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.31)
 
 project(infini_train VERSION 0.0.1 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -24,5 +24,5 @@ add_library(infini_train STATIC ${SRC})
 target_link_libraries(infini_train glog gflags)
 
 # Examples
-add_executable(mnist example/mnist/main.cc)
+add_executable(mnist example/mnist/main.cc example/mnist/dataset.cc example/mnist/net.cc)
 target_link_libraries(mnist glog gflags infini_train)

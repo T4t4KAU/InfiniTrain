@@ -1,16 +1,15 @@
-#include "infini_train/include/op.h"
+#include "infini_train/include/ops.h"
 
 #include <cmath>
 #include <cstdint>
 #include <memory>
-#include <random>
 #include <vector>
 
 #include "glog/logging.h"
 
 #include "infini_train/include/tensor.h"
 
-namespace infini_train {
+namespace infini_train::ops {
 std::vector<std::shared_ptr<Tensor>> Op::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
     input_tensors_ = input_tensors;
     auto output_tensors = ForwardImpl();
@@ -18,36 +17,22 @@ std::vector<std::shared_ptr<Tensor>> Op::Forward(const std::vector<std::shared_p
         tensor->UseGradient();
         tensor->SetProducer(this);
     }
+    output_tensors_ = output_tensors;
     return output_tensors;
 }
 
 void Op::Backward(const Tensor *output_tensor) {
-    BackwardImpl(output_tensor);
-    for (const auto &tensor : input_tensors_) {
-        tensor->Backward();
+    backward_reached_ += 1;
+    if (backward_reached_ != output_tensors_.size()) {
+        return;
     }
+    BackwardImpl();
+    for (const auto &tensor : input_tensors_) { tensor->Backward(); }
+    backward_reached_ = 0;
 }
 
-void Op::AddWeight(const std::vector<int64_t> &dims, const DataType dtype) {
-    weights_.emplace_back(dims, dtype);
-    weights_.back().UseGradient();
-
-    // TODO(dcj): Initialize weights outside later.
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
-    weights_.back().Fill(dis(gen));
-}
-
-std::vector<Tensor> &Op::Weights() { return weights_; }
-const std::vector<Tensor> &Op::Weights() const { return weights_; }
-
-namespace ops {
-Linear::Linear(int64_t in_dim, int64_t out_dim)
-    : in_dim_(in_dim), out_dim_(out_dim) {
-    AddWeight({in_dim_, out_dim}, DataType::kFLOAT32);
-    AddWeight({out_dim}, DataType::kFLOAT32);
-}
+Linear::Linear(Tensor *weight, Tensor *bias)
+    : in_dim_(weight->Dims()[0]), out_dim_(weight->Dims()[1]), w_(weight), b_(bias) {}
 
 std::vector<std::shared_ptr<Tensor>> Linear::ForwardImpl() {
     CHECK_EQ(input_tensors_.size(), 1);
@@ -58,44 +43,36 @@ std::vector<std::shared_ptr<Tensor>> Linear::ForwardImpl() {
     const int bs = input->Dims()[0];
 
     auto output = std::make_shared<Tensor>(std::vector<int64_t>{bs, out_dim_}, DataType::kFLOAT32);
-    const auto &w_ = weights_[0];
-    const auto &b_ = weights_[1];
 
     for (int64_t i = 0; i < bs; ++i) {
         for (int64_t j = 0; j < out_dim_; ++j) {
             float sum = 0.0f;
             for (int64_t k = 0; k < in_dim_; ++k) {
-                sum += reinterpret_cast<const float *>(input->DataPtr())[i * in_dim_ + k] * reinterpret_cast<const float *>(w_.DataPtr())[k * out_dim_ + j];
+                sum += reinterpret_cast<const float *>(input->DataPtr())[i * in_dim_ + k]
+                     * reinterpret_cast<const float *>(w_->DataPtr())[k * out_dim_ + j];
             }
-            reinterpret_cast<float *>(output->DataPtr())[i * out_dim_ + j] = sum + reinterpret_cast<const float *>(b_.DataPtr())[j];
+            reinterpret_cast<float *>(output->DataPtr())[i * out_dim_ + j]
+                = sum + reinterpret_cast<const float *>(b_->DataPtr())[j];
         }
     }
     return {output};
 }
 
-void Linear::BackwardImpl(const Tensor *output_tensor) {
-    CHECK_EQ(output_tensor->Dims().size(), 2);
-    CHECK_EQ(output_tensor->Dims()[1], out_dim_);
-
+void Linear::BackwardImpl() {
+    auto &output = output_tensors_[0];
     auto &input = input_tensors_[0];
     const int bs = input->Dims()[0];
 
-    auto &w_ = weights_[0];
-    auto &b_ = weights_[1];
     // Compute the gradient of the linear transformation
     if (input->Gradient()) {
         for (int64_t i = 0; i < bs; ++i) {
             for (int64_t j = 0; j < in_dim_; ++j) {
                 float sum = 0.0f;
                 for (int64_t k = 0; k < out_dim_; ++k) {
-                    sum += reinterpret_cast<float *>(
-                               w_.Gradient()->DataPtr())[j * out_dim_ + k]
-                         * reinterpret_cast<const float *>(
-                               output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+                    sum += reinterpret_cast<float *>(w_->Gradient()->DataPtr())[j * out_dim_ + k]
+                         * reinterpret_cast<const float *>(output->Gradient()->DataPtr())[i * out_dim_ + k];
                 }
-                reinterpret_cast<float *>(
-                    input->Gradient()->DataPtr())[i * in_dim_ + j]
-                    = sum;
+                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * in_dim_ + j] += sum;
             }
         }
     }
@@ -104,12 +81,14 @@ void Linear::BackwardImpl(const Tensor *output_tensor) {
     for (int64_t i = 0; i < bs; ++i) {
         for (int64_t j = 0; j < in_dim_; ++j) {
             for (int64_t k = 0; k < out_dim_; ++k) {
-                reinterpret_cast<float *>(w_.Gradient()->DataPtr())[j * out_dim_ + k] += reinterpret_cast<float *>(input->DataPtr())[i * in_dim_ + j] * reinterpret_cast<const float *>(output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+                reinterpret_cast<float *>(w_->Gradient()->DataPtr())[j * out_dim_ + k]
+                    += reinterpret_cast<float *>(input->DataPtr())[i * in_dim_ + j]
+                     * reinterpret_cast<const float *>(output->Gradient()->DataPtr())[i * out_dim_ + k];
             }
         }
         for (int64_t k = 0; k < out_dim_; ++k) {
-            reinterpret_cast<float *>(b_.Gradient()->DataPtr())[k] += reinterpret_cast<const float *>(
-                output_tensor->Gradient()->DataPtr())[i * out_dim_ + k];
+            reinterpret_cast<float *>(b_->Gradient()->DataPtr())[k]
+                += reinterpret_cast<const float *>(output->Gradient()->DataPtr())[i * out_dim_ + k];
         }
     }
 }
@@ -132,10 +111,9 @@ std::vector<std::shared_ptr<Tensor>> Sigmoid::ForwardImpl() {
     return {output};
 }
 
-void Sigmoid::BackwardImpl(const Tensor *output_tensor) {
-    CHECK_EQ(output_tensor->Dims().size(), 2);
-
+void Sigmoid::BackwardImpl() {
     // Get the input tensor and output tensor
+    const auto &output = output_tensors_[0];
     const auto &input = input_tensors_[0];
     const int bs = input->Dims()[0];
     const int out_dim = input->Dims()[1];
@@ -144,10 +122,9 @@ void Sigmoid::BackwardImpl(const Tensor *output_tensor) {
     if (input->Gradient()) {
         for (int64_t i = 0; i < bs; ++i) {
             for (int64_t j = 0; j < out_dim; ++j) {
-                const float x = reinterpret_cast<const float *>(output_tensor->DataPtr())[i * out_dim + j];
-                const float grad = reinterpret_cast<const float *>(
-                    output_tensor->Gradient()->DataPtr())[i * out_dim + j];
-                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * out_dim + j] = grad * x * (1.0f - x);
+                const float x = reinterpret_cast<const float *>(output->DataPtr())[i * out_dim + j];
+                const float grad = reinterpret_cast<const float *>(output->Gradient()->DataPtr())[i * out_dim + j];
+                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * out_dim + j] += grad * x * (1.0f - x);
             }
         }
     }
@@ -202,9 +179,7 @@ std::vector<std::shared_ptr<Tensor>> CrossEntropy::ForwardImpl() {
     return {output};
 }
 
-void CrossEntropy::BackwardImpl(const Tensor *output_tensor) {
-    CHECK_EQ(output_tensor->Dims().size(), 0);
-
+void CrossEntropy::BackwardImpl() {
     const auto &input = input_tensors_[0];
     const int bs = input->Dims()[0];
     const int num_classes = input->Dims()[1];
@@ -238,10 +213,10 @@ void CrossEntropy::BackwardImpl(const Tensor *output_tensor) {
             int64_t target_idx = target->DataPtr()[i];
             for (int j = 0; j < num_classes; ++j) {
                 float grad = softmax_probs[i * num_classes + j] - (j == target_idx ? 1.0f : 0.0f);
-                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * num_classes + j] = grad / bs; // normalize by batch size
+                reinterpret_cast<float *>(input->Gradient()->DataPtr())[i * num_classes + j]
+                    += grad / bs; // normalize by batch size
             }
         }
     }
 }
-} // namespace ops
-} // namespace infini_train
+} // namespace infini_train::ops
