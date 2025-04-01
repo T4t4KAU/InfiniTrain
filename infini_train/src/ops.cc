@@ -214,4 +214,153 @@ void CrossEntropy::BackwardImpl() {
         }
     }
 }
+
+Embedding::Embedding(Tensor *token_emb, Tensor *pos_emb) : wte_(token_emb), wpe_(pos_emb) {}
+
+std::vector<std::shared_ptr<Tensor>> Embedding::ForwardImpl() {
+    CHECK_EQ(input_tensors_.size(), 1);
+    CHECK_EQ(input_tensors_[0]->Dims().size(), 2);
+    CHECK_LE(input_tensors_[0]->Dims()[1], wpe_->Dims()[0]);
+
+    const auto T = wpe_->Dims()[0];
+    const auto C = wpe_->Dims()[1];
+    const auto &input = input_tensors_[0];
+    const auto B = input->Dims()[0];
+
+    auto output = std::make_shared<Tensor>(std::vector<int64_t>{B, T, C}, DataType::kFLOAT32);
+
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            int ix = static_cast<int>(reinterpret_cast<const uint16_t *>(input->DataPtr())[b * T + t]);
+            for (int i = 0; i < C; i++) {
+                reinterpret_cast<float *>(output->DataPtr())[b * T * C + t * C + i]
+                    = reinterpret_cast<float *>(wte_->DataPtr())[ix * C + i]
+                    + reinterpret_cast<float *>(wpe_->DataPtr())[t * C + i];
+            }
+        }
+    }
+
+    return {output};
+}
+
+void Embedding::BackwardImpl() {
+    const auto T = wpe_->Dims()[0];
+    const auto C = wpe_->Dims()[1];
+
+    auto &output = output_tensors_[0];
+    auto &input = input_tensors_[0];
+    const auto B = input->Dims()[0];
+
+    if (input->Gradient()) {
+        for (int b = 0; b < B; b++) {
+            for (int t = 0; t < T; t++) {
+                int ix = static_cast<int>(reinterpret_cast<const uint16_t *>(input->DataPtr())[b * T + t]);
+                for (int i = 0; i < C; i++) {
+                    float d = reinterpret_cast<float *>(output->Gradient()->DataPtr())[b * T * C + t * C + i];
+                    reinterpret_cast<float *>(wte_->Gradient()->DataPtr())[ix * C + i] += d;
+                    reinterpret_cast<float *>(wpe_->Gradient()->DataPtr())[t * C + i] += d;
+                }
+            }
+        }
+    }
+}
+
+LayerNorm::LayerNorm(Tensor *w, Tensor *b, float eps) : w_(w), b_(b), eps_(eps) {}
+
+std::vector<std::shared_ptr<Tensor>> LayerNorm::ForwardImpl() {
+    CHECK_EQ(input_tensors_.size(), 1);
+    CHECK_EQ(input_tensors_[0]->Dims().size(), 3);
+    CHECK_LE(input_tensors_[0]->Dims()[2], w_->Dims()[0]);
+
+    const auto &input = input_tensors_[0];
+    const auto B = input->Dims()[0];
+    const auto T = input->Dims()[1];
+    const auto C = w_->Dims()[0];
+
+    auto output = std::make_shared<Tensor>(std::vector<int64_t>{B, T, C}, DataType::kFLOAT32);
+    mean_ = std::make_unique<Tensor>(std::vector<int64_t>{B, T}, DataType::kFLOAT32);
+    rstd_ = std::make_unique<Tensor>(std::vector<int64_t>{B, T}, DataType::kFLOAT32);
+
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            float m = 0.0f;
+            for (int i = 0; i < C; i++) { m += reinterpret_cast<float *>(input->DataPtr())[b * T * C + t * C + i]; }
+            m = m / C;
+
+            float v = 0.0f;
+            for (int i = 0; i < C; i++) {
+                float xshift = reinterpret_cast<float *>(input->DataPtr())[b * T * C + t * C + i] - m;
+                v += xshift * xshift;
+            }
+            v = v / C;
+
+            float s = 1.0f / sqrtf(v + eps_);
+
+            for (int i = 0; i < C; i++) {
+                float n = (s * (reinterpret_cast<float *>(input->DataPtr())[b * T * C + t * C + i] - m)); // normalize
+                float o = n * reinterpret_cast<float *>(w_->DataPtr())[i]
+                        + reinterpret_cast<float *>(b_->DataPtr())[i];                   // scale and shift
+                reinterpret_cast<float *>(output->DataPtr())[b * T * C + t * C + i] = o; // write
+            }
+            // cache the mean and rstd for the backward pass later
+            reinterpret_cast<float *>(mean_->DataPtr())[b * T + t] = m;
+            reinterpret_cast<float *>(rstd_->DataPtr())[b * T + t] = s;
+        }
+    }
+
+    return {output};
+}
+
+void LayerNorm::BackwardImpl() {
+    const auto &input = input_tensors_[0];
+    const auto &output = output_tensors_[0];
+    const auto B = input->Dims()[0];
+    const auto T = input->Dims()[1];
+    const auto C = w_->Dims()[0];
+
+    if (input->Gradient()) {
+        for (int b = 0; b < B; b++) {
+            for (int t = 0; t < T; t++) {
+                float mean_bt = reinterpret_cast<float *>(mean_->DataPtr())[b * T + t];
+                float rstd_bt = reinterpret_cast<float *>(rstd_->DataPtr())[b * T + t];
+
+                // first: two reduce operations
+                float dnorm_mean = 0.0f;
+                float dnorm_norm_mean = 0.0f;
+                for (int i = 0; i < C; i++) {
+                    float norm_bti
+                        = (reinterpret_cast<float *>(input->DataPtr())[b * T * C + t * C + i] - mean_bt) * rstd_bt;
+                    float dnorm_i = reinterpret_cast<float *>(w_->DataPtr())[i]
+                                  * reinterpret_cast<float *>(output->Gradient()->DataPtr())[b * T * C + t * C + i];
+                    dnorm_mean += dnorm_i;
+                    dnorm_norm_mean += dnorm_i * norm_bti;
+                }
+                dnorm_mean = dnorm_mean / C;
+                dnorm_norm_mean = dnorm_norm_mean / C;
+
+                // now iterate again and accumulate all the gradients
+                for (int i = 0; i < C; i++) {
+                    float norm_bti
+                        = (reinterpret_cast<float *>(input->DataPtr())[b * T * C + t * C + i] - mean_bt) * rstd_bt;
+                    float dnorm_i = reinterpret_cast<float *>(w_->DataPtr())[i]
+                                  * reinterpret_cast<float *>(output->Gradient()->DataPtr())[b * T * C + t * C + i];
+                    // gradient contribution to bias
+                    reinterpret_cast<float *>(b_->Gradient()->DataPtr())[i]
+                        += reinterpret_cast<float *>(output->Gradient()->DataPtr())[b * T * C + t * C + i];
+                    // gradient contribution to weight
+                    reinterpret_cast<float *>(w_->Gradient()->DataPtr())[i]
+                        += norm_bti * reinterpret_cast<float *>(output->Gradient()->DataPtr())[b * T * C + t * C + i];
+                    // gradient contribution to input
+                    float dval = 0.0f;
+                    dval += dnorm_i;                    // term 1
+                    dval -= dnorm_mean;                 // term 2
+                    dval -= norm_bti * dnorm_norm_mean; // term 3
+                    dval *= rstd_bt;                    // final scale
+                    reinterpret_cast<float *>(input->Gradient()->DataPtr())[b * T * C + t * C + i] += dval;
+                }
+            }
+        }
+    }
+}
+
 } // namespace infini_train::ops

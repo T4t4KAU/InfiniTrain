@@ -15,6 +15,10 @@
 #include "infini_train/include/device.h"
 #include "infini_train/include/tensor.h"
 
+#ifndef WARP_SIZE
+#define WARP_SIZE 32
+#endif
+
 namespace infini_train::ops {
 namespace {
 constexpr float kNegativeInfinity = -std::numeric_limits<float>::infinity();
@@ -244,4 +248,250 @@ void CUDACrossEntropy::BackwardImpl() {
             reinterpret_cast<uint8_t *>(target->DataPtr()), bs, num_classes);
     }
 }
+
+CUDAEmbedding::CUDAEmbedding(Tensor *token_emb, Tensor *pos_emb) : Embedding(token_emb, pos_emb) {}
+
+__global__ void EmbeddingForwardKernel(const uint16_t *input, float *output, const float *wte, const float *wpe, int B,
+                                       int T, int C) {
+    int idx = (blockIdx.x * blockDim.x + threadIdx.x);
+    int N = B * T * C;
+    if (idx >= N) {
+        return;
+    }
+
+    int bt = idx / C;
+    int b = bt / T;
+    int t = bt % T;
+    int c = idx % C;
+
+    int ix = static_cast<int>(input[b * T + t]);
+
+    output[b * T * C + t * C + c] = wte[ix * C + c] + wpe[t * C + c];
+}
+
+// Embedding forward
+std::vector<std::shared_ptr<Tensor>> CUDAEmbedding::ForwardImpl() {
+    CHECK_EQ(input_tensors_.size(), 1);
+    CHECK_EQ(input_tensors_[0]->Dims().size(), 2);
+    CHECK_LE(input_tensors_[0]->Dims()[1], wpe_->Dims()[0]);
+
+    const int T = wpe_->Dims()[0];
+    const int C = wpe_->Dims()[1];
+    const auto &input = input_tensors_[0];
+    const int B = input->Dims()[0];
+
+    auto output
+        = std::make_shared<Tensor>(std::vector<int64_t>{B, T, C}, DataType::kFLOAT32, Device(DeviceType::kCUDA, 0));
+
+    int threads_per_block = 256;
+    int num_blocks = (B + threads_per_block - 1) / threads_per_block;
+    EmbeddingForwardKernel<<<num_blocks, threads_per_block>>>(
+        reinterpret_cast<const uint16_t *>(input->DataPtr()), reinterpret_cast<float *>(output->DataPtr()),
+        reinterpret_cast<const float *>(wte_->DataPtr()), reinterpret_cast<const float *>(wpe_->DataPtr()), B, T, C);
+
+    return {output};
+}
+
+template <int BLOCK_SIZE = 256>
+__global__ void WTEBackwardKernel(float *dwte, const float *doutput, const uint16_t *input, int B, int T, int C) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= B * T) {
+        return;
+    }
+
+    int token = static_cast<int>(input[idx]);
+    if (token < 0) {
+        return;
+    }
+
+    int c = threadIdx.x % C;
+    float grad = doutput[idx * C + c];
+
+    atomicAdd(&dwte[token * C + c], grad);
+}
+
+__global__ void WPEBackwardKernel(float *dwpe, const float *doutput, const uint16_t *input, int B, int T, int C) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= T * C) {
+        return;
+    }
+
+    int t = idx / C;
+    int c = idx % C;
+    float accum = 0.0f;
+
+    for (int b = 0; b < B; b++) { accum += doutput[b * T * C + t * C + c]; }
+
+    atomicAdd(&dwpe[t * C + c], accum);
+}
+
+// Embedding backward
+void CUDAEmbedding::BackwardImpl() {
+    const int T = wpe_->Dims()[0];
+    const int C = wpe_->Dims()[1];
+    const auto &input = input_tensors_[0];
+    const auto &output = output_tensors_[0];
+    const int B = input->Dims()[0];
+
+    if (input->Gradient()) {
+        // TODO(zbl): check correctness
+        int threads_per_block = 256;
+        int num_blocks = ((T * C) + threads_per_block - 1) / threads_per_block;
+        WPEBackwardKernel<<<num_blocks, threads_per_block>>>(
+            reinterpret_cast<float *>(wpe_->Gradient()->DataPtr()),
+            reinterpret_cast<const float *>(output->Gradient()->DataPtr()),
+            reinterpret_cast<const uint16_t *>(input->DataPtr()), B, T, C);
+
+        num_blocks = ((B * T) + threads_per_block - 1) / threads_per_block;
+        WTEBackwardKernel<<<num_blocks, threads_per_block>>>(
+            reinterpret_cast<float *>(wte_->Gradient()->DataPtr()),
+            reinterpret_cast<const float *>(output->Gradient()->DataPtr()),
+            reinterpret_cast<const uint16_t *>(input->DataPtr()), B, T, C);
+    }
+}
+
+CUDALayerNorm::CUDALayerNorm(Tensor *w, Tensor *b, float eps) : LayerNorm(w, b, eps) {}
+
+__forceinline__ __device__ float warpReduceSum(float val) {
+    for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) { val += __shfl_down_sync(0xffffffff, val, offset); }
+    return val;
+}
+
+__global__ void LayerNormForwardKernel(const float *input, float *output, float *mean, float *rstd, const float *weight,
+                                       const float *bias, int N, int C) {
+    int lane_id = threadIdx.x % WARP_SIZE;
+    int warp_id = threadIdx.x / WARP_SIZE;
+    int idx = blockIdx.x * (blockDim.x / WARP_SIZE) + warp_id;
+    if (idx >= N) {
+        return;
+    }
+
+    float sum = 0.0f;
+    for (int i = lane_id; i < C; i += WARP_SIZE) { sum += (float)input[idx * C + i]; }
+    float m = warpReduceSum(sum) / C;
+    if (lane_id == 0 && mean) {
+        mean[idx] = m;
+    }
+
+    sum = 0.0f;
+    for (int i = lane_id; i < C; i += WARP_SIZE) {
+        float diff = (float)input[idx * C + i] - m;
+        sum += diff * diff;
+    }
+    float s = rsqrtf(warpReduceSum(sum) / C + 1e-5f);
+    if (lane_id == 0 && rstd) {
+        rstd[idx] = s;
+    }
+
+    for (int c = lane_id; c < C; c += WARP_SIZE) {
+        float n = s * ((float)input[idx * C + c] - m);
+        output[idx * C + c] = (float)(n * (float)weight[c] + (float)bias[c]);
+    }
+}
+
+// LayerNorm forward
+std::vector<std::shared_ptr<Tensor>> CUDALayerNorm::ForwardImpl() {
+    CHECK_EQ(input_tensors_.size(), 1);
+    CHECK_EQ(input_tensors_[0]->Dims().size(), 3);
+    CHECK_LE(input_tensors_[0]->Dims()[2], w_->Dims()[0]);
+
+    const auto &input = input_tensors_[0];
+    const auto B = input->Dims()[0];
+    const auto T = input->Dims()[1];
+    const auto C = w_->Dims()[0];
+
+    auto output
+        = std::make_shared<Tensor>(std::vector<int64_t>{B, T, C}, DataType::kFLOAT32, Device(DeviceType::kCUDA, 0));
+    mean_ = std::make_unique<Tensor>(std::vector<int64_t>{B, T}, DataType::kFLOAT32, Device(DeviceType::kCUDA, 0));
+    rstd_ = std::make_unique<Tensor>(std::vector<int64_t>{B, T}, DataType::kFLOAT32, Device(DeviceType::kCUDA, 0));
+
+    int threads_per_block = 256;
+    int block_y = threads_per_block / WARP_SIZE;
+    int N = B * T;
+    int num_blocks = (N + block_y - 1) / block_y;
+
+    LayerNormForwardKernel<<<num_blocks, threads_per_block>>>(
+        reinterpret_cast<const float *>(input->DataPtr()), reinterpret_cast<float *>(output->DataPtr()),
+        reinterpret_cast<float *>(mean_->DataPtr()), reinterpret_cast<float *>(rstd_->DataPtr()),
+        reinterpret_cast<const float *>(w_->DataPtr()), reinterpret_cast<const float *>(b_->DataPtr()), N, C);
+
+    return {output};
+}
+
+__global__ void LayerNormBackwardKernel(float *dinput, float *dweight, float *dbias, const float *doutput,
+                                        const float *input, const float *weight, const float *mean, const float *rstd,
+                                        int N, int C) {
+    const int tid = threadIdx.x;
+    const int bid = blockIdx.x;
+    const int lane = tid % warpSize;
+    const int warp_id = tid / warpSize;
+    const int warps_per_block = blockDim.x / warpSize;
+
+    __shared__ float shared_dweight[32];
+    __shared__ float shared_dbias[32];
+
+    float dweight_sum = 0.0f;
+    float dbias_sum = 0.0f;
+    float dinput_val = 0.0f;
+
+    for (int i = bid * C + tid; i < N * C; i += gridDim.x * C) {
+        int idx = i % C;
+        float val_x = input[i];
+        float val_doutput = doutput[i];
+        float norm_x = (val_x - mean[i / C]) * rstd[i / C];
+
+        dweight_sum += val_doutput * norm_x;
+        dbias_sum += val_doutput;
+
+        // Compute dinput using doutput
+        dinput_val = val_doutput * weight[idx] * rstd[i / C];
+        dinput[i] = dinput_val;
+    }
+
+    dweight_sum = warpReduceSum(dweight_sum);
+    dbias_sum = warpReduceSum(dbias_sum);
+
+    if (lane == 0) {
+        shared_dweight[warp_id] = dweight_sum;
+        shared_dbias[warp_id] = dbias_sum;
+    }
+    __syncthreads();
+
+    if (warp_id == 0 && lane < warps_per_block) {
+        dweight_sum = shared_dweight[lane];
+        dbias_sum = shared_dbias[lane];
+        dweight_sum = warpReduceSum(dweight_sum);
+        dbias_sum = warpReduceSum(dbias_sum);
+
+        if (lane == 0) {
+            atomicAdd(&dweight[bid], dweight_sum);
+            atomicAdd(&dbias[bid], dbias_sum);
+        }
+    }
+}
+
+// LayerNorm backward
+void CUDALayerNorm::BackwardImpl() {
+    const auto &input = input_tensors_[0];
+    const auto &output = output_tensors_[0];
+    const auto B = input->Dims()[0];
+    const auto T = input->Dims()[1];
+    const auto C = w_->Dims()[0];
+
+    int threads_per_block = 256;
+    int num_blocks = (B * T * C + threads_per_block - 1) / threads_per_block;
+
+    if (input->Gradient()) {
+        // TODO(zbl): check correctness
+        LayerNormBackwardKernel<<<num_blocks, threads_per_block>>>(
+            reinterpret_cast<float *>(input->Gradient()->DataPtr()),
+            reinterpret_cast<float *>(w_->Gradient()->DataPtr()), reinterpret_cast<float *>(b_->Gradient()->DataPtr()),
+            reinterpret_cast<const float *>(output->Gradient()->DataPtr()),
+            reinterpret_cast<const float *>(input->DataPtr()), reinterpret_cast<const float *>(w_->DataPtr()),
+            reinterpret_cast<const float *>(mean_->DataPtr()), reinterpret_cast<const float *>(rstd_->DataPtr()), B * T,
+            C);
+        CUDA_CHECK(cudaGetLastError());
+    }
+}
+
 } // namespace infini_train::ops

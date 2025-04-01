@@ -90,4 +90,57 @@ public:
     std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
     void BackwardImpl() override;
 };
+
+/*
+  x: [bs, seq_len]
+  -> Embedding (wte: [vocab_size, embed_dim], wpe: [max_position, embed_dim])
+  -> o: [bs, seq_len, embed_dim]
+*/
+class Embedding : public Op {
+public:
+    Embedding(Tensor *token_emb, Tensor *pos_emb);
+
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl() override;
+
+protected:
+    Tensor *wte_ = nullptr; // not owned
+    Tensor *wpe_ = nullptr; // not owned
+};
+
+class CUDAEmbedding : public Embedding {
+public:
+    CUDAEmbedding(Tensor *token_emb, Tensor *pos_emb);
+
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl() override;
+};
+
+/*
+  x: [bs, seq_len, embed_dim]
+  -> LayerNorm (w: [embed_dim], b: [embed_dim])
+  -> o: [bs, seq_len, embed_dim]
+*/
+class LayerNorm : public Op {
+public:
+    LayerNorm(Tensor *w, Tensor *b, float eps = 1e-5f);
+
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl() override;
+
+protected:
+    float eps_ = 0.0f;
+    Tensor *w_ = nullptr; // not owned
+    Tensor *b_ = nullptr; // not owned
+    std::unique_ptr<Tensor> mean_;
+    std::unique_ptr<Tensor> rstd_;
+};
+
+class CUDALayerNorm : public LayerNorm {
+public:
+    CUDALayerNorm(Tensor *w, Tensor *b, float eps = 1e-5f);
+
+    std::vector<std::shared_ptr<Tensor>> ForwardImpl() override;
+    void BackwardImpl() override;
+};
 } // namespace infini_train::ops
