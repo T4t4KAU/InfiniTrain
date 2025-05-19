@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
@@ -53,6 +54,11 @@ SN3PascalVincentFile ReadSN3PascalVincentFile(const std::string &path) {
       reserved | reserved | type_int | num_dims |
       1 byte   | 1 byte   | 1 byte   | 1 byte   | 4*{num_dims} bytes | # bytes |
     */
+
+    if (!std::filesystem::exists(path)) {
+        LOG(FATAL) << "File not found: " << path;
+    }
+
     SN3PascalVincentFile sn3_file;
     std::ifstream ifs(path, std::ios::binary);
     const auto magic = ReadSeveralBytesFromIfstream(4, &ifs);

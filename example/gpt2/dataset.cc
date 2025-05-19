@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -57,6 +58,11 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
       magic    | version  | num_toks | reserved   |
       4 bytes  | 4 bytes  | 4 bytes  | 1012 bytes | # bytes       |
     */
+
+    if (!std::filesystem::exists(path)) {
+        LOG(FATAL) << "File not found: " << path;
+    }
+
     TinyShakespeareFile text_file;
     std::ifstream ifs(path, std::ios::binary);
     const auto header = ReadSeveralBytesFromIfstream(1024, &ifs);
