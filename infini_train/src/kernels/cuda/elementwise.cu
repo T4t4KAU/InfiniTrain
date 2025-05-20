@@ -7,7 +7,7 @@
 
 namespace infini_train::kernels::cuda {
 
-#define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
+#define CEIL_DIV(x, y) (((x) + (y)-1) / (y))
 
 namespace {
 

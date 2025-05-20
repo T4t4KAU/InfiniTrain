@@ -99,4 +99,3 @@ std::vector<std::shared_ptr<Tensor>> Stack::Backward(const std::vector<std::shar
     return kernel.Call<std::vector<std::shared_ptr<Tensor>>>(input_dims_, dim_, grad_output);
 }
 } // namespace infini_train::autograd
- 
