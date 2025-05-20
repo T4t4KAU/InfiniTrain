@@ -1,5 +1,3 @@
-#include "infini_train/include/kernels/cuda/stack.h"
-
 #include <algorithm>
 #include <memory>
 #include <numeric>
@@ -8,6 +6,7 @@
 
 #include "glog/logging.h"
 
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
 
 namespace infini_train::kernels::cuda {
@@ -129,3 +128,11 @@ std::vector<std::shared_ptr<Tensor>> StackBackward(const std::vector<int64_t> &i
 }
 
 } // namespace infini_train::kernels::cuda
+
+#define REGISTER_CUDA_STACK_KERNEL(kernel_name)                                                                        \
+    REGISTER_KERNEL(infini_train::DeviceType::kCUDA, kernel_name, infini_train::kernels::cuda::kernel_name)
+
+REGISTER_CUDA_STACK_KERNEL(StackForward)
+REGISTER_CUDA_STACK_KERNEL(StackBackward)
+
+#undef REGISTER_CUDA_STACK_KERNEL

@@ -1,10 +1,7 @@
-#include "infini_train/include/kernels/cuda/transform.h"
-
-#include <memory>
-
 #include "cuda_runtime.h"
 #include "glog/logging.h"
 
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
 
 namespace infini_train::kernels::cuda {
@@ -387,3 +384,19 @@ std::shared_ptr<Tensor> RepeatInterleaveBackward(const std::shared_ptr<Tensor> &
     return grad_input;
 }
 } // namespace infini_train::kernels::cuda
+
+#define REGISTER_CUDA_TRANSFORM_KERNEL(kernel_name)                                                                    \
+    REGISTER_KERNEL(infini_train::DeviceType::kCUDA, kernel_name, infini_train::kernels::cuda::kernel_name)
+
+REGISTER_CUDA_TRANSFORM_KERNEL(TriuForward)
+REGISTER_CUDA_TRANSFORM_KERNEL(TriuBackward)
+REGISTER_CUDA_TRANSFORM_KERNEL(TrilForward)
+REGISTER_CUDA_TRANSFORM_KERNEL(TrilBackward)
+REGISTER_CUDA_TRANSFORM_KERNEL(TransposeForward)
+REGISTER_CUDA_TRANSFORM_KERNEL(TransposeBackward)
+REGISTER_CUDA_TRANSFORM_KERNEL(MaskForward)
+REGISTER_CUDA_TRANSFORM_KERNEL(MaskBackward)
+REGISTER_CUDA_TRANSFORM_KERNEL(RepeatInterleaveForward)
+REGISTER_CUDA_TRANSFORM_KERNEL(RepeatInterleaveBackward)
+
+#undef REGISTER_CUDA_TRANSFORM_KERNEL

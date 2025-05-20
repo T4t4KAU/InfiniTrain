@@ -1,5 +1,3 @@
-#include "infini_train/include/kernels/cpu/outer.h"
-
 #include <cstdint>
 #include <fcntl.h>
 #include <memory>
@@ -8,6 +6,7 @@
 
 #include "glog/logging.h"
 
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
 
 namespace infini_train::kernels::cpu {
@@ -59,3 +58,11 @@ std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>> OuterBackward(const
 }
 
 } // namespace infini_train::kernels::cpu
+
+#define REGISTER_CPU_OUTER_KERNEL(kernel_name)                                                                         \
+    REGISTER_KERNEL(infini_train::DeviceType::kCPU, kernel_name, infini_train::kernels::cpu::kernel_name)
+
+REGISTER_CPU_OUTER_KERNEL(OuterForward)
+REGISTER_CPU_OUTER_KERNEL(OuterBackward)
+
+#undef REGISTER_CPU_OUTER_KERNEL

@@ -1,12 +1,6 @@
-#include "infini_train/include/kernels/cuda/reduction.h"
-
-#include <limits>
-#include <memory>
-#include <numeric>
-#include <vector>
-
 #include "glog/logging.h"
 
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
 
 namespace infini_train::kernels::cuda {
@@ -192,3 +186,19 @@ std::shared_ptr<Tensor> MinBackward(const std::shared_ptr<Tensor> &grad_output, 
 }
 
 } // namespace infini_train::kernels::cuda
+
+#define REGISTER_CUDA_REDUCTION_KERNEL(kernel_name)                                                                    \
+    REGISTER_KERNEL(infini_train::DeviceType::kCUDA, kernel_name, infini_train::kernels::cuda::kernel_name)
+
+// REGISTER_CUDA_REDUCTION_KERNEL(ReduceOpForward)
+REGISTER_CUDA_REDUCTION_KERNEL(ReduceOpBackward)
+REGISTER_CUDA_REDUCTION_KERNEL(MeanForward)
+REGISTER_CUDA_REDUCTION_KERNEL(SumForward)
+REGISTER_CUDA_REDUCTION_KERNEL(MaxForward)
+REGISTER_CUDA_REDUCTION_KERNEL(MinForward)
+REGISTER_CUDA_REDUCTION_KERNEL(MeanBackward)
+REGISTER_CUDA_REDUCTION_KERNEL(SumBackward)
+REGISTER_CUDA_REDUCTION_KERNEL(MaxBackward)
+REGISTER_CUDA_REDUCTION_KERNEL(MinBackward)
+
+#undef REGISTER_CUDA_REDUCTION_KERNEL

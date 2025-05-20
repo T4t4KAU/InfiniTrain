@@ -6,11 +6,8 @@
 
 #include "glog/logging.h"
 
-#include "infini_train/include/kernels/cpu/outer.h"
+#include "infini_train/include/dispatcher.h"
 #include "infini_train/include/tensor.h"
-#ifdef USE_CUDA
-#include "infini_train/include/kernels/cuda/outer.h"
-#endif
 
 namespace infini_train::autograd {
 std::vector<std::shared_ptr<Tensor>> Outer::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
@@ -18,23 +15,9 @@ std::vector<std::shared_ptr<Tensor>> Outer::Forward(const std::vector<std::share
     const auto &input1 = input_tensors[0];
     const auto &input2 = input_tensors[1];
 
-    std::shared_ptr<Tensor> output = nullptr;
-    switch (input1->GetDevice().Type()) {
-    case DeviceType::kCPU: {
-        output = kernels::cpu::OuterForward(input1, input2);
-        break;
-    }
-#ifdef USE_CUDA
-    case DeviceType::kCUDA: {
-        output = kernels::cuda::OuterForward(input1, input2);
-        break;
-    }
-#endif
-    default:
-        LOG(FATAL) << "Unsupported device type: " << static_cast<int>(input1->GetDevice().Type());
-        break;
-    }
-    return {output};
+    auto device = input1->GetDevice().Type();
+    auto kernel = Dispatcher::Instance().GetKernel({device, "OuterForward"});
+    return {kernel.Call<std::shared_ptr<Tensor>>(input1, input2)};
 }
 
 void Outer::SetupContext(const std::vector<std::shared_ptr<Tensor>> &input_tensors,
@@ -51,21 +34,10 @@ std::vector<std::shared_ptr<Tensor>> Outer::Backward(const std::vector<std::shar
     CHECK_EQ(grad_outputs.size(), 1);
     const auto &grad_output = grad_outputs[0];
 
-    switch (input1->GetDevice().Type()) {
-    case DeviceType::kCPU: {
-        auto [grad_input1, grad_input2] = kernels::cpu::OuterBackward(input1, input2, grad_output);
-        return {grad_input1, grad_input2};
-    }
-#ifdef USE_CUDA
-    case DeviceType::kCUDA: {
-        auto [grad_input1, grad_input2] = kernels::cuda::OuterBackward(input1, input2, grad_output);
-        return {grad_input1, grad_input2};
-    }
-#endif
-    default:
-        LOG(FATAL) << "Unsupported device type: " << static_cast<int>(input1->GetDevice().Type());
-        break;
-    }
-    return {};
+    auto device = input1->GetDevice().Type();
+    auto kernel = Dispatcher::Instance().GetKernel({device, "OuterBackward"});
+    auto [grad_input1, grad_input2]
+        = kernel.Call<std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>>(input1, input2, grad_output);
+    return {grad_input1, grad_input2};
 }
 } // namespace infini_train::autograd
