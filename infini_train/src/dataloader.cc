@@ -9,6 +9,7 @@
 #include "glog/logging.h"
 
 #include "infini_train/include/dataset.h"
+#include "infini_train/include/sampler.h"
 #include "infini_train/include/tensor.h"
 
 namespace infini_train {
@@ -36,8 +37,9 @@ std::shared_ptr<Tensor> Stack(const std::vector<std::shared_ptr<Tensor>> &tensor
 } // namespace
 
 DataLoaderIterator::DataLoaderIterator(const Dataset &dataset, size_t batch_size, size_t batch_idx,
-                                       size_t max_batch_idx)
-    : dataset_(&dataset), batch_size_(batch_size), batch_idx_(batch_idx), max_batch_idx_(max_batch_idx){};
+                                       size_t max_batch_idx, const std::vector<size_t> &indices)
+    : dataset_(&dataset), batch_size_(batch_size), batch_idx_(batch_idx), max_batch_idx_(max_batch_idx),
+      indices_(&indices){};
 
 std::pair<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>> DataLoaderIterator::operator*() const {
     /*
@@ -49,7 +51,7 @@ std::pair<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>> DataLoaderIterator::
     std::vector<std::shared_ptr<Tensor>> data_vec;
     std::vector<std::shared_ptr<Tensor>> label_vec;
     for (int idx = batch_idx_ * batch_size_; idx < (batch_idx_ + 1) * batch_size_ && idx < dataset_->Size(); ++idx) {
-        auto &&[data, label] = dataset_->operator[](idx);
+        auto &&[data, label] = dataset_->operator[](indices_->at(idx));
         data_vec.push_back(std::move(data));
         label_vec.push_back(std::move(label));
     }
@@ -77,12 +79,31 @@ bool operator==(const DataLoaderIterator &lhs, const DataLoaderIterator &rhs) {
     return lhs.batch_idx_ == rhs.batch_idx_;
 }
 
-DataLoader::DataLoader(const std::shared_ptr<Dataset> &dataset, size_t batch_size)
-    : dataset_(dataset), batch_size_(batch_size), max_batch_idx_((dataset_->Size() + batch_size_ - 1) / batch_size_) {}
+DataLoader::DataLoader(const std::shared_ptr<Dataset> &dataset, size_t batch_size, bool shuffle,
+                       std::unique_ptr<Sampler> sampler)
+    : dataset_(dataset), batch_size_(batch_size), max_batch_idx_((dataset_->Size() + batch_size_ - 1) / batch_size_),
+      sampler_(std::move(sampler)) {
 
-DataLoaderIterator DataLoader::begin() const { return DataLoaderIterator(*dataset_, batch_size_, 0, max_batch_idx_); }
+    if (sampler_ != nullptr && shuffle) {
+        LOG(FATAL) << "Sampler option is mutually exclusive with 'shuffle'";
+    }
+
+    if (sampler_ == nullptr) {
+        if (shuffle) {
+            sampler_ = std::make_unique<RandomSampler>(false);
+        } else {
+            sampler_ = std::make_unique<SequentialSampler>();
+        }
+    }
+
+    indices_ = std::make_shared<std::vector<size_t>>(sampler_->GetIndices(dataset_->Size()));
+}
+
+DataLoaderIterator DataLoader::begin() const {
+    return DataLoaderIterator(*dataset_, batch_size_, 0, max_batch_idx_, *indices_);
+}
 
 DataLoaderIterator DataLoader::end() const {
-    return DataLoaderIterator(*dataset_, batch_size_, max_batch_idx_, max_batch_idx_);
+    return DataLoaderIterator(*dataset_, batch_size_, max_batch_idx_, max_batch_idx_, *indices_);
 }
 } // namespace infini_train
